@@ -83,6 +83,25 @@ static int exists(const char *path) {
 	return 1;
 }
 
+static int io_mount(int id, const char *path, int permission, int a4, int a5, int a6) {
+	uint32_t buf[6];
+
+	buf[0] = a4;
+	buf[1] = a5;
+	buf[2] = a6;
+	buf[3] = 0;
+	buf[4] = 0;
+	buf[5] = 0;
+
+	return ksceIoMount(id, path, permission, buf);
+}
+
+static void io_remount(int id) {
+	ksceIoUmount(id, 0, 0, 0);
+	ksceIoUmount(id, 1, 0, 0);
+	io_mount(id, NULL, 0, 0, 0, 0);
+}
+
 int shellKernelIsUx0Redirected() {
 	uint32_t state;
 	ENTER_SYSCALL(state);
@@ -172,7 +191,7 @@ int module_start(SceSize args, void *argp) {
 	// First try loading from bootimage
 	SceUID modid;
 	if (ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) {
-		modid = ksceKernelLoadStartModule("os0:kd/umass.skprx", 0, NULL, 0, NULL, NULL);
+		modid = ksceKernelLoadStartModule("os0:kd/umass.skprx", 0, NULL, 0x800, NULL, NULL);
 		ksceKernelUmountBootfs();
 	} else {
 		// try loading from VitaShell
@@ -191,8 +210,10 @@ int module_start(SceSize args, void *argp) {
 	hookid = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
 
 	// start memory card redirection if we don't disable it
-	if (!exists("ur0:DISABLE_USB_MC.txt") && !shellKernelIsUx0Redirected()) {
+	if (exists("sdstor0:uma-lp-act-entire") && !exists("ur0:DISABLE_USB_MC.txt") && !shellKernelIsUx0Redirected()) {
+		ksceIoUmount(0xF00, 0, 0, 0);
 		shellKernelRedirectUx0();
+		io_remount(MOUNT_POINT_ID);
 	}
 
 	return SCE_KERNEL_START_SUCCESS;
