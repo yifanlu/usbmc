@@ -83,51 +83,28 @@ static int exists(const char *path) {
 	return 1;
 }
 
-static int io_mount(int id, const char *path, int permission, int a4, int a5, int a6) {
-	uint32_t buf[6];
-
-	buf[0] = a4;
-	buf[1] = a5;
-	buf[2] = a6;
-	buf[3] = 0;
-	buf[4] = 0;
-	buf[5] = 0;
-
-	return ksceIoMount(id, path, permission, buf);
-}
-
 static void io_remount(int id) {
 	ksceIoUmount(id, 0, 0, 0);
 	ksceIoUmount(id, 1, 0, 0);
-	io_mount(id, NULL, 0, 0, 0, 0);
+	ksceIoMount(id, NULL, 0, 0, 0, 0);
 }
 
 int shellKernelIsUx0Redirected() {
-	uint32_t state;
-	ENTER_SYSCALL(state);
-
 	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
 	if (!mount) {
-		EXIT_SYSCALL(state);
 		return -1;
 	}
 
 	if (mount->dev == &uma_ux0_dev && mount->dev2 == &uma_ux0_dev) {
-		EXIT_SYSCALL(state);
 		return 1;
 	}
 
-	EXIT_SYSCALL(state);
 	return 0;
 }
 
 int shellKernelRedirectUx0() {
-	uint32_t state;
-	ENTER_SYSCALL(state);
-
 	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
 	if (!mount) {
-		EXIT_SYSCALL(state);
 		return -1;
 	}
 
@@ -139,17 +116,12 @@ int shellKernelRedirectUx0() {
 	mount->dev = &uma_ux0_dev;
 	mount->dev2 = &uma_ux0_dev;
 
-	EXIT_SYSCALL(state);
 	return 0;
 }
 
 int shellKernelUnredirectUx0() {
-	uint32_t state;
-	ENTER_SYSCALL(state);
-
 	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
 	if (!mount) {
-		EXIT_SYSCALL(state);
 		return -1;
 	}
 
@@ -161,7 +133,6 @@ int shellKernelUnredirectUx0() {
 		ori_dev2 = NULL;
 	}
 
-	EXIT_SYSCALL(state);
 	return 0;
 }
 
@@ -211,7 +182,6 @@ int module_start(SceSize args, void *argp) {
 
 	// start memory card redirection if we don't disable it
 	if (exists("sdstor0:uma-lp-act-entire") && !exists("ur0:DISABLE_USB_MC.txt") && !shellKernelIsUx0Redirected()) {
-		ksceIoUmount(0xF00, 0, 0, 0);
 		shellKernelRedirectUx0();
 		io_remount(MOUNT_POINT_ID);
 	}
