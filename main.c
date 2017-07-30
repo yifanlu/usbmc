@@ -19,6 +19,7 @@
 #include <psp2kern/kernel/cpu.h>
 #include <psp2kern/kernel/modulemgr.h>
 #include <psp2kern/kernel/sysmem.h>
+#include <psp2kern/kernel/threadmgr.h>
 #include <psp2kern/io/fcntl.h>
 
 #include <stdio.h>
@@ -176,10 +177,20 @@ int module_start(SceSize args, void *argp) {
 	// Fake safe mode in SceUsbServ
 	hookid = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
 
-	// start memory card redirection if we don't disable it
-	if (exists("sdstor0:uma-lp-act-entire") && !exists("ur0:DISABLE_USB_MC.txt") && !shellKernelIsUx0Redirected()) {
-		shellKernelRedirectUx0();
-		io_remount(MOUNT_POINT_ID);
+	if (exists("ur0:DISABLE_USB_MC.txt") || shellKernelIsUx0Redirected()) {
+		return SCE_KERNEL_START_SUCCESS;
+	}
+
+	// wait ~2 second max for USB to be detected
+	// this may look bad but the Vita does this to detect ux0 so ¯\_(ツ)_/¯
+	for (int i = 0; i < 11; i++) {
+		// try to detect USB plugin 10 times for 0.2s each
+		if (exists("sdstor0:uma-lp-act-entire")) {
+			shellKernelRedirectUx0();
+			io_remount(MOUNT_POINT_ID);
+			break;
+		}
+		ksceKernelDelayThread(200000);
 	}
 
 	return SCE_KERNEL_START_SUCCESS;
