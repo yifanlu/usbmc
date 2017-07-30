@@ -28,6 +28,8 @@
 
 #define MOUNT_POINT_ID 0x800
 
+const char check_patch[] = {0x01, 0x20, 0x01, 0x20};
+
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
 
 typedef struct {
@@ -65,13 +67,7 @@ static SceUID hookid = -1;
 
 static tai_hook_ref_t ksceSysrootIsSafeModeRef;
 
-static tai_hook_ref_t ksceSblAimgrIsDolceRef;
-
 static int ksceSysrootIsSafeModePatched() {
-	return 1;
-}
-
-static int ksceSblAimgrIsDolcePatched() {
 	return 1;
 }
 
@@ -139,43 +135,43 @@ int shellKernelUnredirectUx0() {
 void _start() __attribute__ ((weak, alias("module_start")));
 int module_start(SceSize args, void *argp) {
 	SceUID tmp1, tmp2;
+	int ret;
+
 	// Get tai module info
 	tai_module_info_t info;
 	info.size = sizeof(tai_module_info_t);
 	if (taiGetModuleInfoForKernel(KERNEL_PID, "SceIofilemgr", &info) < 0)
-		return SCE_KERNEL_START_SUCCESS;
+		return SCE_KERNEL_START_NO_RESIDENT;
 
 	// Get important function
 	module_get_offset(KERNEL_PID, info.modid, 0, 0x138C1, (uintptr_t *)&sceIoFindMountPoint);
-
-	// Fake safe mode so that SceUsbMass can be loaded
-	tmp1 = taiHookFunctionExportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceSysmem", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
-	if (tmp1 < 0)
-		return SCE_KERNEL_START_SUCCESS;
-	// this patch is only needed on handheld units
-	tmp2 = taiHookFunctionExportForKernel(KERNEL_PID, &ksceSblAimgrIsDolceRef, "SceSysmem", 0xFD00C69A, 0x71608CA3, ksceSblAimgrIsDolcePatched);
-	if (tmp2 < 0)
-		return SCE_KERNEL_START_SUCCESS;
 
 	// Load SceUsbMass
 
 	// First try loading from bootimage
 	SceUID modid;
 	if (ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) {
-		modid = ksceKernelLoadStartModule("os0:kd/umass.skprx", 0, NULL, 0x800, NULL, NULL);
+		modid = ksceKernelLoadModule("os0:kd/umass.skprx", 0x800, NULL);
 		ksceKernelUmountBootfs();
 	} else {
 		// try loading from VitaShell
-		modid = ksceKernelLoadStartModule("ux0:VitaShell/module/umass.skprx", 0, NULL, 0, NULL, NULL);
+		modid = ksceKernelLoadModule("ux0:VitaShell/module/umass.skprx", 0, NULL);
 	}
 
-	// Release patch
-	taiHookReleaseForKernel(tmp1, ksceSysrootIsSafeModeRef);
-	taiHookReleaseForKernel(tmp2, ksceSblAimgrIsDolceRef);
+	// Hook module_start
+	// FIXME: add support to taihen so we don't need to hard code this address
+	tmp1 = taiInjectDataForKernel(KERNEL_PID, modid, 0, 0x1546, check_patch, sizeof(check_patch));
+	tmp2 = taiInjectDataForKernel(KERNEL_PID, modid, 0, 0x154c, check_patch, sizeof(check_patch));
+
+	if (modid >= 0) ret = ksceKernelStartModule(modid, 0, NULL, 0, NULL, NULL); 
+	else ret = modid;
+
+	if (tmp1 >= 0) taiInjectReleaseForKernel(tmp1);
+	if (tmp2 >= 0) taiInjectReleaseForKernel(tmp2);
 
 	// Check result
-	if (modid < 0)
-		return SCE_KERNEL_START_SUCCESS;
+	if (ret < 0)
+		return SCE_KERNEL_START_NO_RESIDENT;
 
 	// Fake safe mode in SceUsbServ
 	hookid = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
