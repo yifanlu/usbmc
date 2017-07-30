@@ -181,10 +181,10 @@ int module_start(SceSize args, void *argp) {
 		return SCE_KERNEL_START_SUCCESS;
 	}
 
-	// wait ~2 second max for USB to be detected
+	// wait ~5 second max for USB to be detected
 	// this may look bad but the Vita does this to detect ux0 so ¯\_(ツ)_/¯
-	for (int i = 0; i < 11; i++) {
-		// try to detect USB plugin 10 times for 0.2s each
+	for (int i = 0; i < 26; i++) {
+		// try to detect USB plugin 25 times for 0.2s each
 		if (exists("sdstor0:uma-lp-act-entire")) {
 			shellKernelRedirectUx0();
 			io_remount(MOUNT_POINT_ID);
