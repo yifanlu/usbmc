@@ -12,3 +12,9 @@ now on. This is because taiHEN loads before the memory card redirection patches
 and will attempt to read config.txt from there first.
 
 Full credits to The_FloW for these patches.
+
+## Memory Card Priority
+
+1. Vita memory card will be used if inserted.
+2. USB storage will be used if inserted and formatted correctly.
+3. Internal memory will be used if it exists (PSTV and PCH-2000).

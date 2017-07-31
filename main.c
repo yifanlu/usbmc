@@ -177,7 +177,7 @@ int module_start(SceSize args, void *argp) {
 	// Fake safe mode in SceUsbServ
 	hookid = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
 
-	if (exists("ur0:DISABLE_USB_MC.txt") || shellKernelIsUx0Redirected()) {
+	if (exists("sdstor0:xmc-lp-ign-userext") || shellKernelIsUx0Redirected()) {
 		return SCE_KERNEL_START_SUCCESS;
 	}
 
