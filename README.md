@@ -6,6 +6,9 @@ storage as `ux0` instead of the memory card or internal memory.
 
 Full credits to The_FloW for the patches.
 
+**This is NOT for gamecard-to-microSD adapters! For that, you want to check 
+out [this](https://github.com/xyzz/gamecard-microsd)**
+
 Note: When using USB storage as memory, make sure all taiHEN plugins are 
 installed to `ur0:` with `ur0:tai/config.txt` as the config file. This is 
 because taiHEN is loaded _before_ usbmc so you cannot use taiHEN plugins 
