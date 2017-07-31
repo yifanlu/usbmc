@@ -31,6 +31,15 @@ already on there.
 4. Once the copying is complete, press X to shut down the Vita.
 5. Remove your old memory card to start using your USB storage as a memory card.
 
+## Uninstallation
+
+1. Insert a Sony memory card or remove the USB storage if you have internal 
+memory (PSTV and PCH-2000).
+2. Install the usbmc vpk to that memory card.
+3. Launch the installer and use the Triangle option to uninstall.
+
+Note you cannot uninstall usbmc while it is in use (duh).
+
 ## Memory Card Priority
 
 1. Vita memory card will be used if inserted.
