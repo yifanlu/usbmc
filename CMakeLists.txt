@@ -8,36 +8,40 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(usbmc)
+set(SHORT_NAME usbmc_installer)
+project(${SHORT_NAME})
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-q -Wall -O3 -nostdlib")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti -fno-exceptions")
+set(VITA_APP_NAME "usbmc")
+set(VITA_TITLEID  "MLCL00005")
 
-add_executable(usbmc
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -fno-builtin-printf")
+set(VITA_MAKE_FSELF_FLAGS "${VITA_MAKE_FSELF_FLAGS} -a 0x2800000000000001")
+
+add_subdirectory(plugin)
+
+add_executable(${SHORT_NAME}
   main.c
+  debug_screen.c
+  debug_screen_font.c
 )
 
-target_link_libraries(usbmc
-  SceIofilemgrForDriver_stub
-  SceSysclibForDriver_stub
-  SceSysmemForDriver_stub
-  SceModulemgrForKernel_stub
-  SceModulemgrForDriver_stub
-  SceThreadmgrForDriver_stub
-  taihenForKernel_stub
-  taihenModuleUtils_stub
+target_link_libraries(${SHORT_NAME}
+  SceDisplay_stub
+  SceCtrl_stub
+  SceProcessmgr_stub
+  ScePower_stub
+  SceRegistryMgr_stub
+  SceAppMgr_stub
+  SceVshBridge_stub
 )
 
-vita_create_self(usbmc.skprx usbmc CONFIG exports.yml UNSAFE)
+vita_create_self(${SHORT_NAME}.self ${SHORT_NAME} UNSAFE)
 
-vita_create_stubs(stubs usbmc ${CMAKE_SOURCE_DIR}/exports.yml KERNEL)
-
-install(DIRECTORY ${CMAKE_BINARY_DIR}/stubs/
-  DESTINATION lib
-  FILES_MATCHING PATTERN "*.a"
+vita_create_vpk(${SHORT_NAME}.vpk ${VITA_TITLEID} ${SHORT_NAME}.self
+  VERSION ${VITA_VERSION}
+  NAME ${VITA_APP_NAME}
+  FILE ${CMAKE_BINARY_DIR}/plugin/usbmc.skprx usbmc.skprx
 )
 
-install(FILES vitashell_kernel.h
-  DESTINATION include
-)
+add_dependencies(${SHORT_NAME}.vpk usbmc.skprx)

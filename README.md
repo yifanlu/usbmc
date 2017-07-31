@@ -4,14 +4,27 @@ This is VitaShell's patches for USB storage support as a standalone plugin. If
 loaded on startup (before SceShell), it will automatically mount the USB 
 storage as `ux0` instead of the memory card or internal memory.
 
-To install, copy the plugin to `ur0:tai/usbmc.skprx` and add that path to the 
-taiHEN `ur0:tai/config.txt` under `*KERNEL`. If you have a memory card inserted 
-or you have a Vita with internal memory (LCD and PSTV), you must delete 
-`ux0:tai/config.txt` from the original memory and use `ur0:tai/config.txt` from 
-now on. This is because taiHEN loads before the memory card redirection patches 
-and will attempt to read config.txt from there first.
+Full credits to The_FloW for the patches.
 
-Full credits to The_FloW for these patches.
+## Installation
+
+1. Make sure your USB storage drive is formatted to a single FAT, FAT32, or 
+exFAT partition using the MBR partition scheme.
+2. Install the vpk
+3. Run usbmc to start the installer
+4. Press X to install the plugin.
+5. Reboot
+
+Now you can use the USB storage as extra storage. Continue reading if you want 
+to use it in place of your memory card.
+
+1. Open the usbmc installer again.
+2. Press X to start the memory card installation.
+3. Choose to either copy VitaShell/molecularShell to the USB storage or copy 
+**everything** from your memory card to the USB storage, replacing any files 
+already on there.
+4. Once the copying is complete, press X to shut down the Vita.
+5. Remove your old memory card to start using your USB storage as a memory card.
 
 ## Memory Card Priority
 

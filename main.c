@@ -1,204 +1,492 @@
-/*
-	VitaShell
-	Copyright (C) 2015-2017, TheFloW
-
-	This program is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#include <psp2kern/kernel/cpu.h>
-#include <psp2kern/kernel/modulemgr.h>
-#include <psp2kern/kernel/sysmem.h>
-#include <psp2kern/kernel/threadmgr.h>
-#include <psp2kern/io/fcntl.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/modulemgr.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/devctl.h>
+#include <psp2/io/dirent.h>
+#include <psp2/io/stat.h>
+#include <psp2/appmgr.h>
+#include <psp2/ctrl.h>
+#include <psp2/power.h>
+#include <psp2/registrymgr.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include <taihen.h>
+#include "debug_screen.h"
 
-#define MOUNT_POINT_ID 0x800
+#define USBMC_INSTALL_PATH "ur0:tai/usbmc.skprx"
+#define GB_IN_BYTES (1073741824.0f)
 
-const char check_patch[] = {0x01, 0x20, 0x01, 0x20};
+#define printf psvDebugScreenPrintf
 
-int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
+int _vshIoMount(int id, const char *path, int permission, void *buf);
 
-typedef struct {
-	const char *dev;
-	const char *dev2;
-	const char *blkdev;
-	const char *blkdev2;
-	int id;
-} SceIoDevice;
+enum {
+	SCREEN_WIDTH = 960,
+	SCREEN_HEIGHT = 544,
+	PROGRESS_BAR_WIDTH = SCREEN_WIDTH,
+	PROGRESS_BAR_HEIGHT = 10,
+	LINE_SIZE = SCREEN_WIDTH,
+};
 
-typedef struct {
-	int id;
-	const char *dev_unix;
-	int unk;
-	int dev_major;
-	int dev_minor;
-	const char *dev_filesystem;
-	int unk2;
-	SceIoDevice *dev;
-	int unk3;
-	SceIoDevice *dev2;
-	int unk4;
-	int unk5;
-	int unk6;
-	int unk7;
-} SceIoMountPoint;
+static unsigned buttons[] = {
+	SCE_CTRL_SELECT,
+	SCE_CTRL_START,
+	SCE_CTRL_UP,
+	SCE_CTRL_RIGHT,
+	SCE_CTRL_DOWN,
+	SCE_CTRL_LEFT,
+	SCE_CTRL_LTRIGGER,
+	SCE_CTRL_RTRIGGER,
+	SCE_CTRL_TRIANGLE,
+	SCE_CTRL_CIRCLE,
+	SCE_CTRL_CROSS,
+	SCE_CTRL_SQUARE,
+};
 
-static SceIoDevice uma_ux0_dev = { "ux0:", "exfatux0", "sdstor0:uma-pp-act-a", "sdstor0:uma-lp-act-entire", MOUNT_POINT_ID };
+int vshIoMount(int id, const char *path, int permission, int a4, int a5, int a6) {
+	uint32_t buf[3];
 
-static SceIoMountPoint *(* sceIoFindMountPoint)(int id) = NULL;
+	buf[0] = a4;
+	buf[1] = a5;
+	buf[2] = a6;
 
-static SceIoDevice *ori_dev = NULL, *ori_dev2 = NULL;
-
-static SceUID hookid = -1;
-
-static tai_hook_ref_t ksceSysrootIsSafeModeRef;
-
-static int ksceSysrootIsSafeModePatched() {
-	return 1;
+	return _vshIoMount(id, path, permission, buf);
 }
 
-static int exists(const char *path) {
-	int fd = ksceIoOpen(path, SCE_O_RDONLY, 0);
+uint32_t get_key(void) {
+	static unsigned prev = 0;
+	SceCtrlData pad;
+	while (1) {
+		memset(&pad, 0, sizeof(pad));
+		sceCtrlPeekBufferPositive(0, &pad, 1);
+		unsigned new = prev ^ (pad.buttons & prev);
+		prev = pad.buttons;
+		for (size_t i = 0; i < sizeof(buttons)/sizeof(*buttons); ++i)
+			if (new & buttons[i])
+				return buttons[i];
+
+		sceKernelDelayThread(1000); // 1ms
+	}
+}
+
+void press_exit(void) {
+	printf("Press any key to exit this application.\n");
+	get_key();
+	sceKernelExitProcess(0);
+}
+
+void press_reboot(void) {
+	printf("Press any key to reboot.\n");
+	get_key();
+	scePowerRequestColdReset();
+}
+
+void press_shutdown(void) {
+	printf("Press any key to power off.\n");
+	get_key();
+	scePowerRequestStandby();
+}
+
+void draw_rect(int x, int y, int width, int height, uint32_t color) {
+	void *base = psvDebugScreenBase();
+
+	for (int j = y; j < y + height; ++j)
+		for (int i = x; i < x + width; ++i)
+			((uint32_t*)base)[j * LINE_SIZE + i] = color;
+}
+
+int exists(const char *path) {
+	int fd = sceIoOpen(path, SCE_O_RDONLY, 0);
 	if (fd < 0)
 		return 0;
-	ksceIoClose(fd);
+	sceIoClose(fd);
 	return 1;
 }
 
-static void io_remount(int id) {
-	ksceIoUmount(id, 0, 0, 0);
-	ksceIoUmount(id, 1, 0, 0);
-	ksceIoMount(id, NULL, 0, 0, 0, 0);
-}
-
-int shellKernelIsUx0Redirected() {
-	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
-	if (!mount) {
-		return -1;
-	}
-
-	if (mount->dev == &uma_ux0_dev && mount->dev2 == &uma_ux0_dev) {
+int check_safe_mode(void) {
+	if (sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0) == 0x80010030) {
 		return 1;
+	} else {
+		return 0;
 	}
-
-	return 0;
 }
 
-int shellKernelRedirectUx0() {
-	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
-	if (!mount) {
+int check_enso(void) {
+	return exists("ur0:tai/boot_config.txt");
+}
+
+int copy_file(const char *dst, const char *src) {
+	char buffer[0x1000];
+	int ret;
+	int off;
+	SceIoStat stat;
+
+	printf("Copying %s ...\n", src);
+
+	int fd = sceIoOpen(src, SCE_O_RDONLY, 0);
+	if (fd < 0) {
+		printf("sceIoOpen(%s): 0x%08X\n", src, fd);
+		return -1;
+	}
+	int wfd = sceIoOpen(dst, SCE_O_WRONLY | SCE_O_TRUNC | SCE_O_CREAT, 0777);
+	if (wfd < 0) {
+		printf("sceIoOpen(%s): 0x%08X\n", dst, wfd);
+		sceIoClose(fd);
+		return -1;
+	}
+	ret = sceIoGetstatByFd(fd, &stat);
+	if (ret < 0) {
+		printf("sceIoGetstatByFd: 0x%08X\n", ret);
+		goto error;
+	}
+	ret = sceIoChstatByFd(wfd, &stat, SCE_CST_CT | SCE_CST_AT | SCE_CST_MT);
+	if (ret < 0) {
+		printf("sceIoChstat: 0x%08X\n", ret);
 		return -1;
 	}
 
-	if (mount->dev != &uma_ux0_dev && mount->dev2 != &uma_ux0_dev) {
-		ori_dev = mount->dev;
-		ori_dev2 = mount->dev2;
+	size_t rd, wr, total, write;
+	total = 0;
+	draw_rect(0, SCREEN_HEIGHT - PROGRESS_BAR_HEIGHT, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT, 0xFF666666);
+	while ((rd = sceIoRead(fd, buffer, sizeof(buffer))) > 0){
+		off = 0;
+		while ((off += (wr = sceIoWrite(wfd, buffer+off, rd-off))) < rd){
+			if (wr < 0){
+				printf("sceIoWrite: 0x%08X\n", wr);
+				goto error;
+			}
+		}
+		total += rd;
+		draw_rect(1, SCREEN_HEIGHT - PROGRESS_BAR_HEIGHT + 1, ((uint64_t)(PROGRESS_BAR_WIDTH - 2)) * total / stat.st_size, PROGRESS_BAR_HEIGHT - 2, 0xFFFFFFFF);
+	}
+	if (rd < 0) {
+		printf("sceIoRead: 0x%08X\n", rd);
+		goto error;
 	}
 
-	mount->dev = &uma_ux0_dev;
-	mount->dev2 = &uma_ux0_dev;
+	sceIoClose(fd);
+	sceIoClose(wfd);
 
 	return 0;
+
+error:
+	sceIoClose(fd);
+	sceIoClose(wfd);
+	return -1;
 }
 
-int shellKernelUnredirectUx0() {
-	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
-	if (!mount) {
-		return -1;
-	}
-
-	if (ori_dev && ori_dev2) {
-		mount->dev = ori_dev;
-		mount->dev2 = ori_dev2;
-
-		ori_dev = NULL;
-		ori_dev2 = NULL;
-	}
-
-	return 0;
-}
-
-void _start() __attribute__ ((weak, alias("module_start")));
-int module_start(SceSize args, void *argp) {
-	SceUID tmp1, tmp2;
+int copy_directory(const char *dst, const char *src) {
+	int fd;
+	SceIoDirent dir;
+	SceIoStat stat;
+	char src_2[256];
+	char dst_2[256];
 	int ret;
 
-	// Get tai module info
-	tai_module_info_t info;
-	info.size = sizeof(tai_module_info_t);
-	if (taiGetModuleInfoForKernel(KERNEL_PID, "SceIofilemgr", &info) < 0)
-		return SCE_KERNEL_START_NO_RESIDENT;
+	printf("Reading %s ...\n", src);
 
-	// Get important function
-	module_get_offset(KERNEL_PID, info.modid, 0, 0x138C1, (uintptr_t *)&sceIoFindMountPoint);
+	sceIoMkdir(dst, 0777);
 
-	// Load SceUsbMass
-
-	// First try loading from bootimage
-	SceUID modid;
-	if (ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) {
-		modid = ksceKernelLoadModule("os0:kd/umass.skprx", 0x800, NULL);
-		ksceKernelUmountBootfs();
-	} else {
-		// try loading from VitaShell
-		modid = ksceKernelLoadModule("ux0:VitaShell/module/umass.skprx", 0, NULL);
+	if ((fd = sceIoDopen(src)) < 0) {
+		printf("sceIoDopen: 0x%08X\n", fd);
+	    return -1;
 	}
 
-	// Hook module_start
-	// FIXME: add support to taihen so we don't need to hard code this address
-	tmp1 = taiInjectDataForKernel(KERNEL_PID, modid, 0, 0x1546, check_patch, sizeof(check_patch));
-	tmp2 = taiInjectDataForKernel(KERNEL_PID, modid, 0, 0x154c, check_patch, sizeof(check_patch));
-
-	if (modid >= 0) ret = ksceKernelStartModule(modid, 0, NULL, 0, NULL, NULL); 
-	else ret = modid;
-
-	if (tmp1 >= 0) taiInjectReleaseForKernel(tmp1);
-	if (tmp2 >= 0) taiInjectReleaseForKernel(tmp2);
-
-	// Check result
-	if (ret < 0)
-		return SCE_KERNEL_START_NO_RESIDENT;
-
-	// Fake safe mode in SceUsbServ
-	hookid = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
-
-	if (exists("sdstor0:xmc-lp-ign-userext") || shellKernelIsUx0Redirected()) {
-		return SCE_KERNEL_START_SUCCESS;
-	}
-
-	// wait ~5 second max for USB to be detected
-	// this may look bad but the Vita does this to detect ux0 so ¯\_(ツ)_/¯
-	for (int i = 0; i < 26; i++) {
-		// try to detect USB plugin 25 times for 0.2s each
-		if (exists("sdstor0:uma-lp-act-entire")) {
-			shellKernelRedirectUx0();
-			io_remount(MOUNT_POINT_ID);
-			break;
+	while ((ret = sceIoDread(fd, &dir)) > 0) {
+		if (dir.d_name[0] == '\0') {
+			continue;
 		}
-		ksceKernelDelayThread(200000);
+		sprintf(src_2, "%s/%s", src, dir.d_name);
+		sprintf(dst_2, "%s/%s", dst, dir.d_name);
+		if (SCE_S_ISDIR(dir.d_stat.st_mode)) {
+			copy_directory(dst_2, src_2);
+		} else {
+			copy_file(dst_2, src_2);
+		}
 	}
 
-	return SCE_KERNEL_START_SUCCESS;
+	sceIoDclose(fd);
+	return 0;
+error:
+	sceIoDclose(fd);
+	return -1;
 }
 
-int module_stop(SceSize args, void *argp) {
-	if (hookid >= 0)
-		taiHookReleaseForKernel(hookid, ksceSysrootIsSafeModeRef);
+int find_config(const char *configpath, int remove) {
+	int fd;
+	int size;
+	char *buffer;
+	char *line;
+	size_t offset, newsize;
 
-	return SCE_KERNEL_STOP_SUCCESS;
+	if ((fd = sceIoOpen(configpath, SCE_O_RDONLY, 0)) < 0) {
+		return 0;
+	}
+
+	size = sceIoLseek32(fd, 0, SEEK_END);
+	if (size < 0) {
+		sceIoClose(fd);
+		return 0;
+	}
+	if (sceIoLseek32(fd, 0, SEEK_SET) < 0) {
+		sceIoClose(fd);
+		return 0;
+	}
+
+	buffer = malloc(size);
+	if (buffer == NULL) {
+		sceIoClose(fd);
+		return 0;
+	}
+
+	int rd, total;
+	total = 0;
+	while ((rd = sceIoRead(fd, buffer+total, size-total)) > 0) {
+		total += rd;
+	}
+	sceIoClose(fd);
+	if (rd < 0 || total != size) {
+		free(buffer);
+		return 0;
+	}
+
+	if ((line = strstr(buffer, USBMC_INSTALL_PATH "\n")) == NULL) {
+		free(buffer);
+		return 0;
+	} else {
+		if (remove) {
+			offset = (line - buffer);
+			newsize = size - strlen(USBMC_INSTALL_PATH "\n");
+			memmove(line, line + strlen(USBMC_INSTALL_PATH "\n"), newsize - offset);
+			fd = sceIoOpen(configpath, SCE_O_TRUNC | SCE_O_CREAT | SCE_O_WRONLY, 6);
+			sceIoWrite(fd, buffer, newsize);
+			sceIoClose(fd);
+		}
+		free(buffer);
+		return 1;
+	}
+}
+
+int install_config(const char *path) {
+	int fd;
+
+	if (exists(path)) {
+		printf("%s detected!\n", path);
+
+		if (find_config(path, 0)) {
+			printf("already installed to %s\n", path);
+		} else {
+			printf("installing to %s ", path);
+			fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_APPEND, 0);
+			sceIoWrite(fd, "\n*KERNEL\n", strlen("\n*KERNEL\n"));
+			sceIoWrite(fd, USBMC_INSTALL_PATH "\n", strlen(USBMC_INSTALL_PATH) + 1);
+			sceIoClose(fd);
+			if (fd < 0) {
+				printf("failed.\n");
+			} else {
+				printf("success.\n");
+				return 0;
+			}
+		}
+	}
+	return -1;
+}
+
+int install_plugin(void) {
+	printf("writing plugin...\n");
+	if (copy_file(USBMC_INSTALL_PATH, "app0:usbmc.skprx") < 0) {
+		printf("failed.\n");
+		return -1;
+	} else {
+		printf("success.\n");
+	}
+
+	if (install_config("ur0:tai/config.txt") < 0) {
+		printf("failed install to ur0:tai/config.txt, perhaps you should upgrade HENkaku\n");
+		return -1;
+	}
+
+	vshIoMount(0xD00, NULL, 2, 0, 0, 0);
+	install_config("imc0:tai/config.txt");
+	install_config("ux0:tai/config.txt");
+
+	printf("disabling 3G modem... ");
+	if (sceRegMgrSetKeyInt("/CONFIG/TEL/", "use_debug_settings", 1) < 0) {
+		printf("failed.\n");
+	} else {
+		printf("success.\n");
+	}
+
+	return 0;
+}
+
+int uninstall_plugin(void) {
+	printf("deleting plugin... ");
+	if (sceIoRemove(USBMC_INSTALL_PATH) < 0) {
+		printf("failed.\n");
+		return -1;
+	} else {
+		printf("success.\n");
+	}
+
+	if (find_config("ur0:tai/config.txt", 1)) {
+		printf("removed from ur0:tai/config.txt\n");
+	}
+
+	vshIoMount(0xD00, NULL, 2, 0, 0, 0);
+	if (find_config("imc0:tai/config.txt", 1)) {
+		printf("removed from imc0:tai/config.txt\n");
+	}
+	if (find_config("ux0:tai/config.txt", 1)) {
+		printf("removed from ux0:tai/config.txt\n");
+	}
+
+	printf("enabling 3G modem... ");
+	if (sceRegMgrSetKeyInt("/CONFIG/TEL/", "use_debug_settings", 0) < 0) {
+		printf("failed.\n");
+	} else {
+		printf("success.\n");
+	}
+
+	return 0;
+}
+
+int install_redirect(void) {
+	SceIoDevInfo info;
+	uint64_t ux0_free_space, ux0_max_space;
+
+	while (1) {
+		if (!exists("sdstor0:uma-lp-act-entire")) {
+			printf("A USB storage device is not detected.\n"
+				   "Press CROSS to try again or any other key to exit.\n\n");
+			if (get_key() != SCE_CTRL_CROSS) {
+				sceKernelExitProcess(0);
+			}
+		} else {
+			break;
+		}
+	}
+
+	vshIoMount(0xF00, NULL, 0, 0, 0, 0);
+	sceAppMgrGetDevInfo("ux0:", &ux0_max_space, &ux0_free_space);
+	printf("Memory Card: %0.02f GB Free / %0.02f GB Total\n", ux0_free_space / GB_IN_BYTES, ux0_max_space / GB_IN_BYTES);
+	if (sceIoDevctl("uma0:", 0x3001, NULL, 0, &info, sizeof(SceIoDevInfo)) < 0) {
+		printf("Error occured trying to read USB storage size, make sure you are not running\n"
+			   "this installer from a USB memory card and also that your USB storage is\n"
+			   "formatted to FAT, FAT32, or exFAT with MBR partition scheme.\n");
+		press_exit();
+	}
+	printf("USB Storage: %0.02f GB Free / %0.02f GB Total\n", info.free_size / GB_IN_BYTES, info.max_size / GB_IN_BYTES);
+
+	printf("Would you like to migrate content from your current memory card?\n");
+	printf("  CROSS      Copy ONLY VitaShell and molecularShell (if installed)\n");
+	printf("  SQUARE     Copy ALL data (existing data on USB will be replaced!)\n");
+	printf("  CIRCLE     Cancel installation\n");
+
+again:
+	switch (get_key()) {
+	case SCE_CTRL_CROSS:
+		if (exists("ux0:app/VITASHELL/eboot.bin")) {
+			sceIoMkdir("uma0:app", 0777);
+			sceIoMkdir("uma0:app/VITASHELL", 0777);
+			copy_directory("uma0:app/VITASHELL", "ux0:app/VITASHELL");
+			sceIoMkdir("uma0:appmeta", 0777);
+			sceIoMkdir("uma0:appmeta/VITASHELL", 0777);
+			copy_directory("uma0:appmeta/VITASHELL", "ux0:appmeta/VITASHELL");
+			sceIoMkdir("uma0:license", 0777);
+			sceIoMkdir("uma0:license/app", 0777);
+			sceIoMkdir("uma0:license/app/VITASHELL", 0777);
+			copy_directory("uma0:license/app/VITASHELL", "ux0:license/app/VITASHELL");
+		}
+		if (exists("ux0:app/MLCL00001/eboot.bin")) {
+			sceIoMkdir("uma0:app", 0777);
+			sceIoMkdir("uma0:app/MLCL00001", 0777);
+			copy_directory("uma0:app/MLCL00001", "ux0:app/MLCL00001");
+			sceIoMkdir("uma0:appmeta", 0777);
+			sceIoMkdir("uma0:appmeta/MLCL00001", 0777);
+			copy_directory("uma0:appmeta/MLCL00001", "ux0:appmeta/MLCL00001");
+			sceIoMkdir("uma0:license", 0777);
+			sceIoMkdir("uma0:license/app", 0777);
+			sceIoMkdir("uma0:license/app/MLCL00001", 0777);
+			copy_directory("uma0:license/app/MLCL00001", "ux0:license/app/MLCL00001");
+		}
+		break;
+	case SCE_CTRL_SQUARE:
+		if ((ux0_max_space - ux0_free_space) > info.free_size) {
+			printf("Not enough free space!\n");
+			goto again;
+		}
+		copy_directory("uma0:", "ux0:");
+		break;
+	case SCE_CTRL_CIRCLE:
+		return 0;
+		break;
+	default:
+		goto again;
+	}
+
+	printf("\n\nInstallation was successful. Shut down your device and remove the Sony memory card.\n");
+	press_shutdown();
+
+	return 0;
+}
+
+int main(int argc, char *argv[]) {
+	(void)argc;
+	(void)argv;
+
+	int ret = 0;
+
+	psvDebugScreenInit();
+
+	if (check_safe_mode()) {
+		printf("Please enable HENkaku unsafe homebrew from Settings before running this installer.\n\n");
+		press_exit();
+	}
+
+	if (!check_enso()) {
+		printf("HENkaku Enso must be installed and not deactivated. Visit https://enso.henkaku.xyz/ for more information.\n\n");
+		press_exit();
+	}
+
+	if (!find_config("ur0:tai/config.txt", 0)) {
+		printf("To prepare your device for USB as memory card, you must first install the usbmc\n"
+			   "plugin. Once installed, your Vita will reboot and mount the USB device. YOU MUST\n"
+			   "RUN THIS INSTALLER AGAIN IF YOU WISH TO USE YOUR USB DRIVE AS A MEMORY CARD! \n"
+			   "If you only wish to use your USB drive as extra storage, you do not need to run\n"
+			   "this installer again.\n\n");
+		printf("Press CROSS to install the plugin and reboot or any other key to exit.\n\n");
+
+		if (get_key() == SCE_CTRL_CROSS) {
+			install_plugin();
+			press_reboot();
+		}
+
+		sceKernelExitProcess(0);
+	}
+
+	printf("Options:\n\n");
+	printf("  CROSS      Install USB as memory card.\n");
+	printf("  TRIANGLE   Uninstall usbmc plugin.\n");
+	printf("  CIRCLE     Exit without doing anything.\n\n");
+
+again:
+	switch (get_key()) {
+	case SCE_CTRL_CROSS:
+		install_redirect();
+		break;
+	case SCE_CTRL_TRIANGLE:
+		uninstall_plugin();
+		break;
+	case SCE_CTRL_CIRCLE:
+		break;
+	default:
+		goto again;
+	}
+
+	press_exit();
+
+	return 0;
 }
