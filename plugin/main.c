@@ -32,6 +32,8 @@
 const char check_patch[] = {0x01, 0x20, 0x01, 0x20};
 
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
+int taiReloadConfig(void);
+int taiLoadPluginsForTitleForKernel(SceUID pid, const char *titleid, int flags);
 
 typedef struct {
 	const char *dev;
@@ -191,6 +193,12 @@ int module_start(SceSize args, void *argp) {
 			break;
 		}
 		ksceKernelDelayThread(200000);
+	}
+
+	// load taiHEN plugins on this new memory stick
+	if (exists("ux0:tai/config.txt")) {
+		taiReloadConfig();
+		taiLoadPluginsForTitleForKernel(KERNEL_PID, "KERNEL", 0);
 	}
 
 	return SCE_KERNEL_START_SUCCESS;
