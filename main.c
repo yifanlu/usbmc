@@ -72,19 +72,19 @@ uint32_t get_key(void) {
 }
 
 void press_exit(void) {
-	printf("Press any key to exit this application.\n");
+	printf("\nPress any key to exit this application.\n");
 	get_key();
 	sceKernelExitProcess(0);
 }
 
 void press_reboot(void) {
-	printf("Press any key to reboot.\n");
+	printf("\nPress any key to reboot.\n");
 	get_key();
 	scePowerRequestColdReset();
 }
 
 void press_shutdown(void) {
-	printf("Press any key to power off.\n");
+	printf("\nPress any key to power off.\n");
 	get_key();
 	scePowerRequestStandby();
 }
@@ -370,12 +370,17 @@ int install_redirect(void) {
 	}
 
 	vshIoMount(0xF00, NULL, 0, 0, 0, 0);
-	sceAppMgrGetDevInfo("ux0:", &ux0_max_space, &ux0_free_space);
+	if (sceAppMgrGetDevInfo("ux0:", &ux0_max_space, &ux0_free_space) < 0) {
+		ux0_free_space = 0;
+		ux0_max_space = 0;
+	}
 	printf("Memory Card: %0.02f GB Free / %0.02f GB Total\n", ux0_free_space / GB_IN_BYTES, ux0_max_space / GB_IN_BYTES);
 	if (sceIoDevctl("uma0:", 0x3001, NULL, 0, &info, sizeof(SceIoDevInfo)) < 0) {
 		printf("Error occured trying to read USB storage size, make sure you are not running\n"
 			   "this installer from a USB memory card and also that your USB storage is\n"
-			   "formatted to FAT, FAT32, or exFAT with MBR partition scheme.\n");
+			   "formatted to FAT, FAT32, or exFAT with MBR partition scheme.\n\n");
+		printf("If you do not have a Sony memory card and wish to install molecularShell, visit\n");
+		printf("https://henkaku.xyz/ from this device, press Install, and hold R when prompted.\n");
 		press_exit();
 	}
 	printf("USB Storage: %0.02f GB Free / %0.02f GB Total\n", info.free_size / GB_IN_BYTES, info.max_size / GB_IN_BYTES);
