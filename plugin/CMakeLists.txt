@@ -25,7 +25,6 @@ target_link_libraries(usbmc
   SceModulemgrForKernel_stub
   SceModulemgrForDriver_stub
   SceThreadmgrForDriver_stub
-  taihen_stub
   taihenForKernel_stub
   taihenModuleUtils_stub
 )

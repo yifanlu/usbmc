@@ -197,8 +197,7 @@ int module_start(SceSize args, void *argp) {
 
 	// load taiHEN plugins on this new memory stick
 	if (exists("ux0:tai/config.txt")) {
-		taiReloadConfig();
-		taiLoadPluginsForTitleForKernel(KERNEL_PID, "KERNEL", 0);
+		taiReloadConfigForKernel(1, 1);
 	}
 
 	return SCE_KERNEL_START_SUCCESS;
