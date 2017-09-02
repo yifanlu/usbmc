@@ -17,6 +17,8 @@ installed to USB.
 
 ## Installation
 
+1. Download the [latest pre-built release](https://github.com/M1lk4h0l1c/usbmc/releases/latest) or compile the 
+source yourself.
 1. Make sure your USB storage drive is formatted to a single FAT, FAT32, or 
 exFAT partition using the MBR partition scheme.
 1. Install the `usbmc_installer.vpk`.
