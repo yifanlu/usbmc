@@ -17,7 +17,7 @@ installed to USB.
 
 ## Installation
 
-1. Download the [latest pre-built release](https://github.com/M1lk4h0l1c/usbmc/releases/latest) or compile the 
+1. Download the [latest pre-built release](https://github.com/M1lk4h0l1c/usbmc/releases/latest) (`usbmc_installer.vpk`) or compile the 
 source yourself.
 1. Make sure your USB storage drive is formatted to a single FAT, FAT32, or 
 exFAT partition using the MBR partition scheme.
@@ -37,6 +37,13 @@ memory card (or internal memory).
 **everything** from your memory card to the USB storage, replacing any files 
 already on there.
 1. Once the copying is complete, press X to shut down the Vita.
+
+## Installation (if you already installed the original `usbmc` by Yifan Lu)
+
+1. Download the [latest pre-built release](https://github.com/M1lk4h0l1c/usbmc/releases/latest) (`usbmc.skprx`) or compile the 
+source yourself.
+1. Replace the original `usbmc.skprx` located at `ur0:tai`.
+1. Reboot
 
 ## Usage
 
