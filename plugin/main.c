@@ -1,19 +1,19 @@
 /*
-	VitaShell
-	Copyright (C) 2015-2017, TheFloW
+    VitaShell
+    Copyright (C) 2015-2017, TheFloW
 
-	This program is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-	You should have received a copy of the GNU General Public License
-	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include <psp2kern/kernel/cpu.h>
@@ -21,192 +21,203 @@
 #include <psp2kern/kernel/sysmem.h>
 #include <psp2kern/kernel/threadmgr.h>
 #include <psp2kern/io/fcntl.h>
+#include <psp2kern/ctrl.h> 
 
 #include <stdio.h>
 #include <string.h>
 
 #include <taihen.h>
 
-#define MOUNT_POINT_ID 0x800
+// Constants
+#define MOUNT_POINT_UX0_ID  0x800
+#define MOUNT_POINT_UX0_NAME "ux0:"
+#define MOUNT_POINT_UX0_NAME_2 "exfatux0"
+#define MOUNT_POINT_UMA0_ID 0xF00
+#define MOUNT_POINT_UMA0_NAME "uma0:"
+#define MOUNT_POINT_UMA0_NAME_2 "exfatuma0"
 
-const char check_patch[] = {0x01, 0x20, 0x01, 0x20};
+#define BLOCK_DEVICE_XMC "sdstor0:xmc-lp-ign-userext"
+#define BLOCK_DEVICE_UMA "sdstor0:uma-pp-act-a"
+#define BLOCK_DEVICE_UMA_2 "sdstor0:uma-lp-act-entire"
 
+#define SWAP_BUTTON SCE_CTRL_SQUARE
+
+const char check_patch[] = { 0x01, 0x20, 0x01, 0x20 };
+
+// External functions
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
-int taiReloadConfig(void);
-int taiLoadPluginsForTitleForKernel(SceUID pid, const char *titleid, int flags);
 
+// Structs
 typedef struct {
-	const char *dev;
-	const char *dev2;
-	const char *blkdev;
-	const char *blkdev2;
-	int id;
+  const char *dev;
+  const char *dev2;
+  const char *blkdev;
+  const char *blkdev2;
+  int id;
 } SceIoDevice;
 
 typedef struct {
-	int id;
-	const char *dev_unix;
-	int unk;
-	int dev_major;
-	int dev_minor;
-	const char *dev_filesystem;
-	int unk2;
-	SceIoDevice *dev;
-	int unk3;
-	SceIoDevice *dev2;
-	int unk4;
-	int unk5;
-	int unk6;
-	int unk7;
+  int id;
+  const char *dev_unix;
+  int unk;
+  int dev_major;
+  int dev_minor;
+  const char *dev_filesystem;
+  int unk2;
+  SceIoDevice *dev;
+  int unk3;
+  SceIoDevice *dev2;
+  int unk4;
+  int unk5;
+  int unk6;
+  int unk7;
 } SceIoMountPoint;
 
-static SceIoDevice uma_ux0_dev = { "ux0:", "exfatux0", "sdstor0:uma-pp-act-a", "sdstor0:uma-lp-act-entire", MOUNT_POINT_ID };
+// Static object definitions
+static SceIoDevice usbToUx0Device  = { MOUNT_POINT_UX0_NAME,  MOUNT_POINT_UX0_NAME_2,  BLOCK_DEVICE_UMA, BLOCK_DEVICE_UMA_2, MOUNT_POINT_UX0_ID  };
+static SceIoDevice usbToUma0Device = { MOUNT_POINT_UMA0_NAME, MOUNT_POINT_UMA0_NAME_2, BLOCK_DEVICE_UMA, BLOCK_DEVICE_UMA_2, MOUNT_POINT_UMA0_ID };
+static SceIoDevice xmcToUma0Device = { MOUNT_POINT_UMA0_NAME, MOUNT_POINT_UMA0_NAME_2, BLOCK_DEVICE_XMC, BLOCK_DEVICE_XMC,   MOUNT_POINT_UMA0_ID };
 
-static SceIoMountPoint *(* sceIoFindMountPoint)(int id) = NULL;
+// External functions (not loaded yet)
+static SceIoMountPoint *(*sceIoFindMountPoint)(int id) = NULL;
 
-static SceIoDevice *ori_dev = NULL, *ori_dev2 = NULL;
-
-static SceUID hookid = -1;
-
+// Static variables
+static SceUID safeModeHookId = -1;
 static tai_hook_ref_t ksceSysrootIsSafeModeRef;
 
+// Functions
 static int ksceSysrootIsSafeModePatched() {
-	return 1;
+  return 1;
 }
 
 static int exists(const char *path) {
-	int fd = ksceIoOpen(path, SCE_O_RDONLY, 0);
-	if (fd < 0)
-		return 0;
-	ksceIoClose(fd);
-	return 1;
+  int fd = ksceIoOpen(path, SCE_O_RDONLY, 0);
+
+  if (fd < 0)
+    return 0;
+
+  ksceIoClose(fd);
+  return 1;
 }
 
 static void io_remount(int id) {
-	ksceIoUmount(id, 0, 0, 0);
-	ksceIoUmount(id, 1, 0, 0);
-	ksceIoMount(id, NULL, 0, 0, 0, 0);
+  ksceIoUmount(id, 0, 0, 0);
+  ksceIoUmount(id, 1, 0, 0);
+  ksceIoMount(id, NULL, 0, 0, 0, 0);
 }
 
-int shellKernelIsUx0Redirected() {
-	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
-	if (!mount) {
-		return -1;
-	}
+int shellKernelRedirect(SceIoDevice *device) {
+  SceIoMountPoint *mount = sceIoFindMountPoint(device->id);
+  if (!mount)
+    return -1;
 
-	if (mount->dev == &uma_ux0_dev && mount->dev2 == &uma_ux0_dev) {
-		return 1;
-	}
+  mount->dev = device;
+  mount->dev2 = device;
 
-	return 0;
+  io_remount(device->id);
+
+  return 0;
 }
 
-int shellKernelRedirectUx0() {
-	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
-	if (!mount) {
-		return -1;
-	}
+int importFindMountPointFunction() {
+  // Get tai module info
+  tai_module_info_t info;
+  info.size = sizeof(tai_module_info_t);
+  if (taiGetModuleInfoForKernel(KERNEL_PID, "SceIofilemgr", &info) < 0)
+    return -1;
 
-	if (mount->dev != &uma_ux0_dev && mount->dev2 != &uma_ux0_dev) {
-		ori_dev = mount->dev;
-		ori_dev2 = mount->dev2;
-	}
+  // Get important function
+  module_get_offset(KERNEL_PID, info.modid, 0, 0x138C1, (uintptr_t *)&sceIoFindMountPoint);
 
-	mount->dev = &uma_ux0_dev;
-	mount->dev2 = &uma_ux0_dev;
-
-	return 0;
+  return 0;
 }
 
-int shellKernelUnredirectUx0() {
-	SceIoMountPoint *mount = sceIoFindMountPoint(MOUNT_POINT_ID);
-	if (!mount) {
-		return -1;
-	}
+SceUID loadSceUsbMassModule() {
+  SceUID moduleId;
+  if (ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) { // Try loading from bootimage
+    moduleId = ksceKernelLoadModule("os0:kd/umass.skprx", 0x800, NULL);
+    ksceKernelUmountBootfs();
+  } else // Try loading from VitaShell
+    moduleId = ksceKernelLoadModule("ux0:VitaShell/module/umass.skprx", 0, NULL);
 
-	if (ori_dev && ori_dev2) {
-		mount->dev = ori_dev;
-		mount->dev2 = ori_dev2;
-
-		ori_dev = NULL;
-		ori_dev2 = NULL;
-	}
-
-	return 0;
+  return moduleId;
 }
 
-void _start() __attribute__ ((weak, alias("module_start")));
+int loadAndStartSceUsbMassModule() {
+  SceUID sceUsbMassModuleId = loadSceUsbMassModule();
+  
+  // Hook module_start
+  // FIXME: add support to taiHEN so we don't need to hard code this address
+  SceUID taiPatchReference1546 = taiInjectDataForKernel(KERNEL_PID, sceUsbMassModuleId, 0, 0x1546, check_patch, sizeof(check_patch));
+  SceUID taiPatchReference154c = taiInjectDataForKernel(KERNEL_PID, sceUsbMassModuleId, 0, 0x154c, check_patch, sizeof(check_patch));
+
+  int status;
+  if (sceUsbMassModuleId >= 0)
+    status = ksceKernelStartModule(sceUsbMassModuleId, 0, NULL, 0, NULL, NULL);
+  else
+    status = sceUsbMassModuleId;
+
+  if (taiPatchReference1546 >= 0)
+    taiInjectReleaseForKernel(taiPatchReference1546);
+  if (taiPatchReference154c >= 0)
+    taiInjectReleaseForKernel(taiPatchReference154c);
+
+  return status;
+}
+
+int isSwapKeyPressed() {
+  ksceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
+  
+  SceCtrlData ctrl;
+  ksceCtrlPeekBufferPositive(0, &ctrl, 1);
+
+  return ctrl.buttons & SWAP_BUTTON;
+}
+
+int isUsbDeviceAvailable() {
+  // Wait ~5 second max. for USB device to be detected
+  // This may look bad but the Vita does this to detect XMC so ¯\_(ツ)_/¯
+  for (int i = 0; i < 26; i++) {
+    if (exists(BLOCK_DEVICE_UMA_2))
+      return 1;
+    ksceKernelDelayThread(200000);
+  }
+
+  return 0;
+}
+
+// Main module function
+void _start() __attribute__((weak, alias("module_start")));
 int module_start(SceSize args, void *argp) {
-	SceUID tmp1, tmp2;
-	int ret;
+  int importStatus = importFindMountPointFunction();
+  if (importStatus < 0)
+    return SCE_KERNEL_START_NO_RESIDENT;
 
-	// Get tai module info
-	tai_module_info_t info;
-	info.size = sizeof(tai_module_info_t);
-	if (taiGetModuleInfoForKernel(KERNEL_PID, "SceIofilemgr", &info) < 0)
-		return SCE_KERNEL_START_NO_RESIDENT;
+  int loadStatus = loadAndStartSceUsbMassModule();
+  if (loadStatus < 0)
+    return SCE_KERNEL_START_NO_RESIDENT;
 
-	// Get important function
-	module_get_offset(KERNEL_PID, info.modid, 0, 0x138C1, (uintptr_t *)&sceIoFindMountPoint);
+  // Fake safe mode in SceUsbServ
+  safeModeHookId = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
 
-	// Load SceUsbMass
+  if (isUsbDeviceAvailable()) {
+    if (isSwapKeyPressed()) {
+      // Mount USB device at uma0
+      shellKernelRedirect(&usbToUma0Device);
+    } else {
+      // Mount USB device at ux0
+      shellKernelRedirect(&usbToUx0Device);
+  
+      // Mount XMC device at uma0
+      shellKernelRedirect(&xmcToUma0Device);
+    }
+  }
 
-	// First try loading from bootimage
-	SceUID modid;
-	if (ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) {
-		modid = ksceKernelLoadModule("os0:kd/umass.skprx", 0x800, NULL);
-		ksceKernelUmountBootfs();
-	} else {
-		// try loading from VitaShell
-		modid = ksceKernelLoadModule("ux0:VitaShell/module/umass.skprx", 0, NULL);
-	}
-
-	// Hook module_start
-	// FIXME: add support to taihen so we don't need to hard code this address
-	tmp1 = taiInjectDataForKernel(KERNEL_PID, modid, 0, 0x1546, check_patch, sizeof(check_patch));
-	tmp2 = taiInjectDataForKernel(KERNEL_PID, modid, 0, 0x154c, check_patch, sizeof(check_patch));
-
-	if (modid >= 0) ret = ksceKernelStartModule(modid, 0, NULL, 0, NULL, NULL); 
-	else ret = modid;
-
-	if (tmp1 >= 0) taiInjectReleaseForKernel(tmp1);
-	if (tmp2 >= 0) taiInjectReleaseForKernel(tmp2);
-
-	// Check result
-	if (ret < 0)
-		return SCE_KERNEL_START_NO_RESIDENT;
-
-	// Fake safe mode in SceUsbServ
-	hookid = taiHookFunctionImportForKernel(KERNEL_PID, &ksceSysrootIsSafeModeRef, "SceUsbServ", 0x2ED7F97A, 0x834439A7, ksceSysrootIsSafeModePatched);
-
-	if (exists("sdstor0:xmc-lp-ign-userext") || shellKernelIsUx0Redirected()) {
-		return SCE_KERNEL_START_SUCCESS;
-	}
-
-	// wait ~5 second max for USB to be detected
-	// this may look bad but the Vita does this to detect ux0 so ¯\_(ツ)_/¯
-	for (int i = 0; i < 26; i++) {
-		// try to detect USB plugin 25 times for 0.2s each
-		if (exists("sdstor0:uma-lp-act-entire")) {
-			shellKernelRedirectUx0();
-			io_remount(MOUNT_POINT_ID);
-			break;
-		}
-		ksceKernelDelayThread(200000);
-	}
-
-	// load taiHEN plugins on this new memory stick
-	if (exists("ux0:tai/config.txt")) {
-		taiReloadConfig();
-		taiLoadPluginsForTitleForKernel(KERNEL_PID, "KERNEL", 0);
-	}
-
-	return SCE_KERNEL_START_SUCCESS;
+  return SCE_KERNEL_START_SUCCESS;
 }
 
 int module_stop(SceSize args, void *argp) {
-	if (hookid >= 0)
-		taiHookReleaseForKernel(hookid, ksceSysrootIsSafeModeRef);
-
-	return SCE_KERNEL_STOP_SUCCESS;
+  if (safeModeHookId >= 0)
+    taiHookReleaseForKernel(safeModeHookId, ksceSysrootIsSafeModeRef);
+  return SCE_KERNEL_STOP_SUCCESS;
 }

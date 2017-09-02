@@ -1,0 +1,22 @@
+### CMake ###
+
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+build
+
+
+### Vita-related files ###
+
+*.skprx
+*.velf
+stubs.yml
+plugin/usbmc
+stubs
+usbmc_installer*

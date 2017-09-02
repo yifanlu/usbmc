@@ -19,8 +19,6 @@
 #ifndef __VITASHELL_KERNEL_H__
 #define __VITASHELL_KERNEL_H__
 
-int shellKernelIsUx0Redirected();
-int shellKernelRedirectUx0();
-int shellKernelUnredirectUx0();
+int shellKernelRedirect();
 
 #endif

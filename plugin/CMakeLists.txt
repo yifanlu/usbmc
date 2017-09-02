@@ -19,13 +19,13 @@ add_executable(usbmc
 )
 
 target_link_libraries(usbmc
+  SceCtrlForDriver_stub
   SceIofilemgrForDriver_stub
   SceSysclibForDriver_stub
   SceSysmemForDriver_stub
   SceModulemgrForKernel_stub
   SceModulemgrForDriver_stub
   SceThreadmgrForDriver_stub
-  taihen_stub
   taihenForKernel_stub
   taihenModuleUtils_stub
 )
