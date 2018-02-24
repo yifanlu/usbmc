@@ -17,7 +17,7 @@ installed to USB.
 ## Installation
 
 1. Make sure your USB storage drive is formatted to a single FAT, FAT32, or 
-exFAT partition using the MBR partition scheme.
+exFAT partition using the MBR partition scheme. (For devices over 32GB, it is recommended to format to 64kb or 32kb cluster sizes)
 2. Install the vpk
 3. Run usbmc to start the installer
 4. Press X to install the plugin.
