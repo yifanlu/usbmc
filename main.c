@@ -114,7 +114,7 @@ int check_safe_mode(void) {
 }
 
 int check_enso(void) {
-	return exists("ur0:tai/boot_config.txt");
+	return exists("ur0:tai/boot_config.txt") || exists("vs0:tai/boot_config.txt");
 }
 
 int copy_file(const char *dst, const char *src) {
