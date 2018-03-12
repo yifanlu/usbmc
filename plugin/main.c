@@ -32,8 +32,6 @@
 const char check_patch[] = {0x01, 0x20, 0x01, 0x20};
 
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
-int taiReloadConfig(void);
-int taiLoadPluginsForTitleForKernel(SceUID pid, const char *titleid, int flags);
 
 typedef struct {
 	const char *dev;
