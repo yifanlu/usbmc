@@ -166,13 +166,13 @@ int module_start(SceSize args, void *argp) {
 	if (ret < 0)
 		ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0x92C9FFC2, 0x185FF1BC, (uintptr_t *)&_ksceKernelMountBootfs);
 	if (ret < 0)
-			return SCE_KERNEL_START_NO_RESIDENT;
+		return SCE_KERNEL_START_NO_RESIDENT;
 
 	ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0xC445FA63, 0x9C838A6B, (uintptr_t *)&_ksceKernelUmountBootfs);
 	if (ret < 0)
 		ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0x92C9FFC2, 0xBD61AD4D, (uintptr_t *)&_ksceKernelUmountBootfs);
 	if (ret < 0)
-			return SCE_KERNEL_START_NO_RESIDENT;
+		return SCE_KERNEL_START_NO_RESIDENT;
 
 	// Load SceUsbMass
 
