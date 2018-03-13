@@ -31,6 +31,7 @@
 
 const char check_patch[] = {0x01, 0x20, 0x01, 0x20};
 
+int module_get_export_func(SceUID pid, const char *modname, uint32_t libnid, uint32_t funcnid, uintptr_t *func);
 int module_get_offset(SceUID pid, SceUID modid, int segidx, size_t offset, uintptr_t *addr);
 
 typedef struct {
@@ -135,6 +136,8 @@ int shellKernelUnredirectUx0() {
 
 void _start() __attribute__ ((weak, alias("module_start")));
 int module_start(SceSize args, void *argp) {
+	int (* _ksceKernelMountBootfs)(const char *bootImagePath);
+	int (* _ksceKernelUmountBootfs)(void);
 	SceUID tmp1, tmp2;
 	int ret;
 
@@ -159,13 +162,25 @@ int module_start(SceSize args, void *argp) {
 			return SCE_KERNEL_START_NO_RESIDENT;
 	}
 
+	ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0xC445FA63, 0x01360661, (uintptr_t *)&_ksceKernelMountBootfs);
+	if (ret < 0)
+		ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0x92C9FFC2, 0x185FF1BC, (uintptr_t *)&_ksceKernelMountBootfs);
+	if (ret < 0)
+			return SCE_KERNEL_START_NO_RESIDENT;
+
+	ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0xC445FA63, 0x9C838A6B, (uintptr_t *)&_ksceKernelUmountBootfs);
+	if (ret < 0)
+		ret = module_get_export_func(KERNEL_PID, "SceKernelModulemgr", 0x92C9FFC2, 0xBD61AD4D, (uintptr_t *)&_ksceKernelUmountBootfs);
+	if (ret < 0)
+			return SCE_KERNEL_START_NO_RESIDENT;
+
 	// Load SceUsbMass
 
 	// First try loading from bootimage
 	SceUID modid;
-	if (ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) {
+	if (_ksceKernelMountBootfs("os0:kd/bootimage.skprx") >= 0) {
 		modid = ksceKernelLoadModule("os0:kd/umass.skprx", 0x800, NULL);
-		ksceKernelUmountBootfs();
+		_ksceKernelUmountBootfs();
 	} else {
 		// try loading from VitaShell
 		modid = ksceKernelLoadModule("ux0:VitaShell/module/umass.skprx", 0, NULL);

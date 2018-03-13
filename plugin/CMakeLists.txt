@@ -22,7 +22,6 @@ target_link_libraries(usbmc
   SceIofilemgrForDriver_stub
   SceSysclibForDriver_stub
   SceSysmemForDriver_stub
-  SceModulemgrForKernel_stub
   SceModulemgrForDriver_stub
   SceThreadmgrForDriver_stub
   taihenForKernel_stub
