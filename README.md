@@ -9,11 +9,6 @@ Full credits to The_FloW for the patches.
 **This is NOT for gamecard-to-microSD adapters! For that, you want to check 
 out [this](https://github.com/xyzz/gamecard-microsd)**
 
-Note: When using USB storage as memory, make sure all taiHEN plugins are 
-installed to `ur0:` with `ur0:tai/config.txt` as the config file. This is 
-because taiHEN is loaded _before_ usbmc so you cannot use taiHEN plugins 
-installed to USB.
-
 ## Installation
 
 1. Make sure your USB storage drive is formatted to a single FAT, FAT32, or 
@@ -48,3 +43,6 @@ Note you cannot uninstall usbmc while it is in use (duh).
 1. Vita memory card will be used if inserted.
 2. USB storage will be used if inserted and formatted correctly.
 3. Internal memory will be used if it exists (PSTV and PCH-2000).
+
+Note that plugins from `ur0:tai/config.txt` will be loaded as well as 
+from `ux0:tai/config.txt` so make sure you don't load the same things twice!
