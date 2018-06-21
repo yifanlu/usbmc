@@ -66,6 +66,7 @@ static SceIoMountPoint *(* sceIoFindMountPoint)(int id) = NULL;
 static SceIoDevice *ori_dev = NULL, *ori_dev2 = NULL;
 
 static SceUID hookid = -1;
+static SceUID hooks[2];
 
 static tai_hook_ref_t ksceSysrootIsSafeModeRef;
 
@@ -134,12 +135,36 @@ int shellKernelUnredirectUx0() {
 	return 0;
 }
 
+// allow Memory Card remount
+void patch_appmgr() {
+	tai_module_info_t appmgr_info;
+	appmgr_info.size = sizeof(tai_module_info_t);
+	if (taiGetModuleInfoForKernel(KERNEL_PID, "SceAppMgr", &appmgr_info) >= 0) {
+		uint32_t nop_nop_opcode = 0xBF00BF00;
+		switch (appmgr_info.module_nid) {
+			case 0xDBB29DB7: // 3.60 retail
+			case 0x1C9879D6: // 3.65 retail
+				hooks[0] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB338, &nop_nop_opcode, 4);
+				hooks[1] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB368, &nop_nop_opcode, 2);
+				break;
+				
+			case 0x54E2E984: // 3.67 retail
+			case 0xC3C538DE: // 3.68 retail
+				hooks[0] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB344, &nop_nop_opcode, 4);
+				hooks[1] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB374, &nop_nop_opcode, 2);
+				break;
+		}
+	}
+}
+
 void _start() __attribute__ ((weak, alias("module_start")));
 int module_start(SceSize args, void *argp) {
 	int (* _ksceKernelMountBootfs)(const char *bootImagePath);
 	int (* _ksceKernelUmountBootfs)(void);
 	SceUID tmp1, tmp2;
 	int ret;
+
+	patch_appmgr();
 
 	// Get tai module info
 	tai_module_info_t info;
@@ -230,6 +255,12 @@ int module_start(SceSize args, void *argp) {
 }
 
 int module_stop(SceSize args, void *argp) {
+	if (hooks[1] >= 0)
+		taiInjectReleaseForKernel(hooks[1]);
+
+	if (hooks[0] >= 0)
+		taiInjectReleaseForKernel(hooks[0]);
+
 	if (hookid >= 0)
 		taiHookReleaseForKernel(hookid, ksceSysrootIsSafeModeRef);
 
