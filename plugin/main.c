@@ -193,7 +193,7 @@ int module_start(SceSize args, void *argp) {
 		case 0xF16E72C7: // 3.69 retail
 		case 0x81A49C2B: // 3.70 retail
 			module_get_offset(KERNEL_PID, info.modid, 0, 0x18735, (uintptr_t *)&sceIoFindMountPoint);
-      break;
+			break;
 
 		default:
 			return SCE_KERNEL_START_NO_RESIDENT;
