@@ -153,6 +153,15 @@ void patch_appmgr() {
 				hooks[0] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB344, &nop_nop_opcode, 4);
 				hooks[1] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB374, &nop_nop_opcode, 2);
 				break;
+
+			case 0x321E4852: // 3.69 retail
+			case 0x700DA0CD: // 3.70 retail
+			case 0xF7846B4E: // 3.71 retail
+            case 0xA8E80BA8: // 3.72 retail
+            case 0xB299D195: // 3.73 retail
+				hooks[0] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB34C, &nop_nop_opcode, 4);
+				hooks[1] = taiInjectDataForKernel(KERNEL_PID, appmgr_info.modid, 0, 0xB37C, &nop_nop_opcode, 2);
+				break;
 		}
 	}
 }
@@ -182,6 +191,14 @@ int module_start(SceSize args, void *argp) {
 		case 0x3347A95F: // 3.67 retail
 		case 0x90DA33DE: // 3.68 retail
 			module_get_offset(KERNEL_PID, info.modid, 0, 0x182F5, (uintptr_t *)&sceIoFindMountPoint);
+			break;
+
+		case 0xF16E72C7: // 3.69 retail
+		case 0x81A49C2B: // 3.70 retail
+		case 0xF2D59083: // 3.71 retail
+        case 0x9C16D40A: // 3.72 retail
+        case 0xF7794A6C: // 3.73 retail
+			module_get_offset(KERNEL_PID, info.modid, 0, 0x18735, (uintptr_t *)&sceIoFindMountPoint);
 			break;
 
 		default:
